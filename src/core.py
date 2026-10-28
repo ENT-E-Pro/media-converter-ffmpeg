@@ -11,12 +11,19 @@ PRESETS = {
     "flac": ("flac", ["-vn", "-c:a", "flac"], "audio/flac"),
     "ogg":  ("ogg",  ["-vn", "-c:a", "libvorbis", "-q:a", "5"], "audio/ogg"),
     "m4a":  ("m4a",  ["-vn", "-c:a", "aac", "-b:a", "192k"], "audio/mp4"),
-    "mp4":  ("mp4",  ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart"], "video/mp4"),
-    "webm": ("webm", ["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "33", "-deadline", "realtime", "-c:a", "libopus"], "video/webm"),
+    # x264 superfast/CRF 23, 2 threads (keeps memory low at 1 GB); output capped at 1080p (see VIDEO_SCALE)
+    "mp4":  ("mp4",  ["-sn", "-dn", "-c:v", "libx264", "-preset", "superfast", "-crf", "23", "-threads", "2", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart"], "video/mp4"),
+    # VP9 realtime, cpu-used 8, row-mt, constrained quality (CRF 33, max 3 Mbit/s); output capped at 1080p
+    "webm": ("webm", ["-sn", "-dn", "-c:v", "libvpx-vp9", "-crf", "33", "-b:v", "3M", "-deadline", "realtime", "-cpu-used", "8", "-row-mt", "1", "-c:a", "libopus"], "video/webm"),
     "gif":  ("gif",  ["-vf", "fps=8,scale=360:-1:flags=lanczos", "-an"], "image/gif"),
     "thumbnail": ("jpg", ["-frames:v", "1", "-q:v", "3"], "image/jpeg"),
 }
 MAX_DURATION_DEFAULT = 3 * 3600
+# Fit inside 1920x1080 (landscape) or 1080x1920 (portrait); never upscales, keeps aspect ratio, even dimensions.
+VIDEO_SCALE = ("scale=w='if(gte(iw,ih),min(iw,1920),min(iw,1080))':h='if(gte(iw,ih),min(ih,1080),min(ih,1920))'"
+               ":force_original_aspect_ratio=decrease:force_divisible_by=2")
+# Inputs that are already in the target codec can be remuxed (stream copy) instead of re-encoded.
+COPY_OK = {"mp4": ({"h264"}, {"aac"}), "webm": ({"vp9", "vp8", "av1"}, {"opus", "vorbis"})}
 
 
 class ConversionError(Exception):
@@ -34,6 +41,10 @@ class Result:
 
 
 def probe(path: str) -> dict:
+    return _probe_full(path)[0]
+
+
+def _probe_full(path: str) -> tuple[dict, dict | None, dict | None]:
     p = subprocess.run(["ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", path],
                        capture_output=True, text=True)
     if p.returncode != 0:
@@ -44,21 +55,21 @@ def probe(path: str) -> dict:
     v = next((s for s in streams if s.get("codec_type") == "video"), None)
     a = next((s for s in streams if s.get("codec_type") == "audio"), None)
     dur = fmt.get("duration")
-    return {
+    return ({
         "format": fmt.get("format_name"),
         "duration": float(dur) if dur not in (None, "N/A") else None,
         "sizeBytes": int(fmt["size"]) if fmt.get("size") else None,
         "video": {"codec": v.get("codec_name"), "width": v.get("width"), "height": v.get("height")} if v else None,
         "audio": {"codec": a.get("codec_name"), "sampleRate": int(a["sample_rate"]) if a.get("sample_rate") else None,
                   "channels": a.get("channels")} if a else None,
-    }
+    }, v, a)
 
 
 def convert(src: str, target: str, out_dir: str, start: float | None = None, duration: float | None = None,
             max_duration: float = MAX_DURATION_DEFAULT, timeout: int = 1800) -> Result:
     if target not in PRESETS:
         raise ConversionError(f"Unsupported target '{target}'. Use one of: {', '.join(PRESETS)}")
-    info = probe(src)
+    info, vstream, astream = _probe_full(src)
     ext, args, mime = PRESETS[target]
     if target in ("mp3", "wav", "wav16k", "flac", "ogg", "m4a") and not info["audio"]:
         raise ConversionError("Input has no audio stream")
@@ -73,15 +84,42 @@ def convert(src: str, target: str, out_dir: str, start: float | None = None, dur
     cmd += ["-i", src]
     if duration:
         cmd += ["-t", str(duration)]
-    if target == "mp4" and not info["audio"]:
-        args = [a for a in args if a not in ("aac",)]
-        args = [x for i, x in enumerate(args) if not (x == "-c:a" )]
+    if target in ("mp4", "webm"):
+        args = _video_args(target, args, vstream, astream, trimmed=bool(start or duration))
     cmd += args + [out]
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if p.returncode != 0 or not os.path.exists(out) or os.path.getsize(out) == 0:
         raise ConversionError(f"ffmpeg failed: {p.stderr.strip()[:500]}")
     out_info = probe(out) if target != "thumbnail" else {"duration": None}
     return Result(out, ext, mime, info, os.path.getsize(out), out_info.get("duration"))
+
+
+def _fits_1080p(v: dict) -> bool:
+    w, h = v.get("width") or 0, v.get("height") or 0
+    return 0 < max(w, h) <= 1920 and 0 < min(w, h) <= 1080
+
+
+def _video_args(target: str, args: list, v: dict | None, a: dict | None, trimmed: bool) -> list:
+    """Remux when the input is already web-ready (same codec, 8-bit 4:2:0, <=1080p, no trim);
+    otherwise re-encode with the preset, scaled down to fit 1080p."""
+    vcodecs, acodecs = COPY_OK[target]
+    v_ok = (v is not None and not trimmed and v.get("codec_name") in vcodecs
+            and v.get("pix_fmt") in ("yuv420p", "yuvj420p") and _fits_1080p(v))
+    if v_ok:
+        out = ["-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-c:v", "copy"]
+        if a is None:
+            out += ["-an"]
+        elif a.get("codec_name") in acodecs:
+            out += ["-c:a", "copy"]
+        else:
+            out += ["-c:a", "aac" if target == "mp4" else "libopus"]
+        return out + (["-movflags", "+faststart"] if target == "mp4" else [])
+    out = list(args)
+    i = out.index("-c:v")
+    out[i:i] = ["-vf", VIDEO_SCALE]
+    if a is None:  # no audio stream: drop the audio codec options
+        j = out.index("-c:a"); del out[j:j + 2]
+    return out
 
 
 BILLING_TOLERANCE_SECONDS = 0.5  # encoder padding (e.g. 60:00.02) must not add a billed minute

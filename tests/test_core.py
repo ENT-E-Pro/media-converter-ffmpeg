@@ -41,3 +41,43 @@ def test_billable_minutes():
 
 def test_billing_tolerance():
     assert billable_minutes(3600.02) == 60 and billable_minutes(3630) == 61 and billable_minutes(60.4) == 1 and billable_minutes(3.0186) == 1
+
+
+def _mk(path, *vargs, audio=True):
+    cmd = ["ffmpeg","-y","-v","error","-f","lavfi","-i","testsrc=size=320x240:rate=15"]
+    if audio: cmd += ["-f","lavfi","-i","sine=frequency=440:sample_rate=44100"]
+    subprocess.run(cmd + ["-t","1"] + list(vargs) + (["-shortest"] if audio else []) + [path], check=True)
+    return path
+
+def test_h264_input_is_remuxed(tmp_path):
+    src = _mk(str(tmp_path / "web.mp4"), "-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac")
+    r = convert(src, "mp4", str(tmp_path))
+    p = probe(r.output_path)
+    assert p["video"]["codec"] == "h264" and p["audio"]["codec"] == "aac"
+    with open(src, "rb") as a, open(r.output_path, "rb") as b:  # stream copy: same size class, no re-encode
+        assert abs(len(a.read()) - len(b.read())) < 20000
+
+def test_trimmed_h264_is_reencoded_accurately(tmp_path):
+    src = _mk(str(tmp_path / "web.mp4"), "-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac")
+    r = convert(src, "mp4", str(tmp_path), start=0.2, duration=0.5)
+    assert 0.3 < r.output_duration < 0.8
+
+def test_mp4_without_audio(tmp_path):
+    src = _mk(str(tmp_path / "silent.mov"), "-c:v","mpeg4", audio=False)
+    r = convert(src, "mp4", str(tmp_path))
+    p = probe(r.output_path)
+    assert p["video"]["codec"] == "h264" and p["audio"] is None
+
+@pytest.mark.parametrize("target", ["mp4", "webm"])
+@pytest.mark.parametrize("size,expect", [("2560x1440", (1920, 1080)), ("1440x2560", (1080, 1920)), ("1600x1600", (1080, 1080))])
+def test_video_capped_at_1080p(tmp_path, target, size, expect):
+    src = str(tmp_path / f"big{size}.mkv")
+    subprocess.run(["ffmpeg","-y","-v","error","-f","lavfi","-i",f"testsrc=size={size}:rate=5","-t","0.4","-c:v","libx264","-pix_fmt","yuv420p",src],check=True)
+    r = convert(src, target, str(tmp_path))
+    p = probe(r.output_path)
+    assert (p["video"]["width"], p["video"]["height"]) == expect
+
+def test_small_video_not_upscaled(media, tmp_path):
+    r = convert(media["av"], "webm", str(tmp_path))
+    p = probe(r.output_path)
+    assert (p["video"]["width"], p["video"]["height"]) == (320, 240) and p["video"]["codec"] == "vp9"

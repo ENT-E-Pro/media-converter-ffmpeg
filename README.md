@@ -17,12 +17,13 @@ You give it a media URL and a target format. It downloads the file, runs FFmpeg,
 |---|---|
 | `wav16k` | Mono 16 kHz WAV, ready for Whisper and other speech-to-text models |
 | `mp3`, `wav`, `flac`, `ogg`, `m4a` | Audio extracted from video, or audio transcoded between formats |
-| `mp4` | H.264 MP4 with faststart, for web playback |
-| `webm` | VP9 WebM |
+| `mp4` | H.264 MP4 with faststart, for web playback (max 1080p) |
+| `webm` | VP9 WebM (max 1080p) |
 | `gif` | Animated preview, 8 fps, 360 px wide, no audio |
 | `thumbnail` | A JPEG frame: the first frame, or the frame at `startSeconds` |
 
 - **Trim** with `startSeconds` / `durationSeconds` (top level or per file).
+- **Video capped at 1080p:** larger inputs are scaled down to fit 1920×1080 (or 1080×1920 portrait). Inputs already in the target codec (H.264 for `mp4`; VP9/VP8/AV1 for `webm`), 8-bit 4:2:0 and ≤1080p are remuxed without re-encoding when no trim is set.
 - **Batch** many URLs in one run with a `files` array, each with its own target and trim.
 - **Failed files are free:** an unreadable or unreachable file comes back as a `status: "error"` row and the run continues.
 - **Agent-friendly:** use it from MCP clients (Claude, Cursor) through Apify's MCP server, n8n, Make, Zapier or plain HTTP.
