@@ -1,0 +1,5 @@
+{
+  "files": [
+    { "url": "https://download.samplelib.com/mp4/sample-5s.mp4", "target": "gif", "startSeconds": 1, "durationSeconds": 3 }
+  ]
+}

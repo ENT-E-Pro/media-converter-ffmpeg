@@ -1,0 +1,20 @@
+{
+  "events": {
+    "apify-actor-start": {
+      "title": "Actor start",
+      "price": 5e-05
+    },
+    "file-converted": {
+      "title": "File converted",
+      "description": "One successfully converted output file (primary event). Failed files are free.",
+      "price": 0.005,
+      "isPrimary": true
+    },
+    "media-minute": {
+      "title": "Media minute processed",
+      "description": "Per started minute of output audio/video (not charged for thumbnails).",
+      "price": 0.002
+    }
+  },
+  "passPlatformUsageToUser": false
+}

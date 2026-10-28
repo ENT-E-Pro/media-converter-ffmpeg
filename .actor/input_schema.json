@@ -1,0 +1,79 @@
+{
+  "title": "Media Converter input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "url": {
+      "title": "Media URL",
+      "type": "string",
+      "editor": "textfield",
+      "description": "Direct, publicly downloadable URL of ONE audio or video file (http/https; redirects followed). Any FFmpeg-readable format: mp4, mov, mkv, webm, avi, mp3, wav, m4a, ogg, flac, opus... Max 2 GB. Must be the file itself, not a YouTube/web page. Example: https://download.samplelib.com/mp4/sample-5s.mp4",
+      "prefill": "https://download.samplelib.com/mp3/sample-3s.mp3"
+    },
+    "target": {
+      "title": "Target format",
+      "type": "string",
+      "editor": "select",
+      "default": "mp3",
+      "enum": [
+        "mp3",
+        "wav",
+        "wav16k",
+        "flac",
+        "ogg",
+        "m4a",
+        "mp4",
+        "webm",
+        "gif",
+        "thumbnail"
+      ],
+      "enumTitles": [
+        "MP3",
+        "WAV",
+        "WAV mono 16 kHz (speech-to-text ready)",
+        "FLAC",
+        "OGG Vorbis",
+        "M4A/AAC",
+        "MP4 H.264",
+        "WebM VP9",
+        "Animated GIF",
+        "JPEG thumbnail (first frame or startSeconds)"
+      ],
+      "description": "Output format, applied to `url` and to any `files` item without its own target. Default: mp3. Audio: mp3 (VBR ~190 kbps), wav (16-bit PCM, original rate), wav16k (mono, 16 000 Hz, 16-bit PCM - use this before Whisper/speech-to-text), flac (lossless), ogg (Vorbis), m4a (AAC 192 kbps). Video: mp4 (H.264 + AAC, web/faststart), webm (VP9 + Opus). Image: gif (animated, 8 fps, 360 px wide, no audio), thumbnail (single JPEG frame at startSeconds, default first frame). Audio targets need an input audio stream; video/gif/thumbnail need a video stream."
+    },
+    "startSeconds": {
+      "title": "Start at (seconds)",
+      "type": "integer",
+      "editor": "number",
+      "minimum": 0,
+      "description": "Optional trim start in whole seconds from the beginning of the input, e.g. 30. For target=thumbnail this is the frame time (default: first frame). Applies to `url` and acts as the default for every `files` item; a `files` item's own startSeconds overrides it (and may be fractional, e.g. 12.5)."
+    },
+    "durationSeconds": {
+      "title": "Duration (seconds)",
+      "type": "integer",
+      "editor": "number",
+      "minimum": 1,
+      "description": "Optional length in whole seconds to keep from startSeconds, e.g. 600 for 10 minutes. Billing is per started minute of OUTPUT, so trimming lowers cost; also lets inputs longer than maxDurationSeconds be processed. Applies to `url` and is the default for every `files` item; per-item durationSeconds overrides it."
+    },
+    "files": {
+      "title": "Batch of files",
+      "type": "array",
+      "editor": "json",
+      "description": "Optional batch, processed sequentially. Array of objects: {\"url\": string (required), \"target\": one of the target values (optional, falls back to top-level target), \"startSeconds\": number (optional, seconds from start to begin, e.g. 30; falls back to top-level startSeconds), \"durationSeconds\": number (optional, seconds to keep, e.g. 60; falls back to top-level durationSeconds)}. Example: [{\"url\":\"https://example.com/talk.mp4\",\"target\":\"wav16k\"},{\"url\":\"https://example.com/clip.mov\",\"target\":\"gif\",\"startSeconds\":5,\"durationSeconds\":4}]. Plain URL strings are also accepted. Failed items return status=error and are not charged.",
+      "prefill": [
+        {
+          "url": "https://download.samplelib.com/mp4/sample-5s.mp4",
+          "target": "gif"
+        }
+      ]
+    },
+    "maxDurationSeconds": {
+      "title": "Max input duration (s)",
+      "type": "integer",
+      "default": 10800,
+      "minimum": 1,
+      "description": "Safety cap in seconds on input duration (default 10800 = 3 hours). Longer inputs are rejected with status=error (not charged) unless durationSeconds is set (top-level or on the item) to trim. Billing is per started minute of OUTPUT, so trimming also lowers cost."
+    }
+  },
+  "description": "Convert one or more public audio/video URLs with FFmpeg. Pass either `url` (+ `target`) for a single file, or `files` for a batch. Each output file is returned as a download URL in the dataset."
+}

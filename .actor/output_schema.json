@@ -1,0 +1,18 @@
+{
+  "actorOutputSchemaVersion": 1,
+  "title": "Conversion results",
+  "properties": {
+    "results": {
+      "type": "string",
+      "title": "Results",
+      "description": "One dataset row per input URL with status, a download URL (outputUrl) of the converted media file, metadata, or an error message.",
+      "template": "{{links.apiDefaultDatasetUrl}}/items?view=overview"
+    },
+    "files": {
+      "type": "string",
+      "title": "Converted files",
+      "description": "Key-value store holding the converted output files.",
+      "template": "{{links.apiDefaultKeyValueStoreUrl}}/keys"
+    }
+  }
+}

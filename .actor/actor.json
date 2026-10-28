@@ -1,0 +1,13 @@
+{
+  "actorSpecification": 1,
+  "name": "media-converter-ffmpeg",
+  "title": "Media Converter for AI Agents (FFmpeg)",
+  "version": "0.1",
+  "buildTag": "latest",
+  "input": "./input_schema.json",
+  "dockerfile": "../Dockerfile",
+  "storages": {
+    "dataset": "./dataset_schema.json"
+  },
+  "output": "./output_schema.json"
+}

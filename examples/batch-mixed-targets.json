@@ -1,0 +1,8 @@
+{
+  "target": "wav16k",
+  "files": [
+    { "url": "https://download.samplelib.com/mp3/sample-3s.mp3" },
+    { "url": "https://download.samplelib.com/mp4/sample-5s.mp4", "target": "mp4" },
+    { "url": "https://download.samplelib.com/mp4/sample-5s.mp4", "target": "thumbnail", "startSeconds": 3 }
+  ]
+}

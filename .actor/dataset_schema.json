@@ -1,0 +1,23 @@
+{
+  "actorSpecification": 1,
+  "views": {
+    "overview": {
+      "title": "Results",
+      "transformation": {
+        "fields": [
+          "sourceUrl",
+          "target",
+          "status",
+          "outputUrl",
+          "outputBytes",
+          "outputDurationSeconds",
+          "billedMinutes",
+          "error"
+        ]
+      },
+      "display": {
+        "component": "table"
+      }
+    }
+  }
+}
