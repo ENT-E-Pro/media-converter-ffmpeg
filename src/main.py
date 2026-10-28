@@ -2,7 +2,7 @@
 import asyncio, os, tempfile, uuid
 import httpx
 from apify import Actor
-from .core import convert, ConversionError, billable_minutes, PRESETS
+from .core import convert, ConversionError, billable_minutes, charge_plan, REENCODE_EVENT, PRESETS
 
 MAX_DOWNLOAD = 2 * 1024**3
 
@@ -31,6 +31,11 @@ async def main() -> None:
         if not files:
             raise ValueError("Provide 'url' or 'files' [{url, target}]")
         kvs = await Actor.open_key_value_store()
+        try:
+            prices = Actor.get_charging_manager().get_pricing_info().per_event_prices or {}
+        except Exception:
+            prices = {}
+        reencode_live = REENCODE_EVENT in prices
         for item in files:
             item = item if isinstance(item, dict) else {"url": item}
             url = item["url"]
@@ -47,17 +52,25 @@ async def main() -> None:
                     with open(res.output_path, "rb") as f:
                         await kvs.set_value(key, f.read(), content_type=res.mime)
                     minutes = billable_minutes(res.output_duration or res.input_probe.get("duration"))
+                    plan = charge_plan(target, res, minutes, reencode_live)
+                    minute_event = next((e for e, _ in plan if e != "file-converted"), None)
                     row.update(status="ok", outputKey=key, outputUrl=await kvs.get_public_url(key),
                                mime=res.mime, outputBytes=res.output_bytes, outputDurationSeconds=res.output_duration,
-                               input=res.input_probe, billedMinutes=minutes)
-                    # charge only on success: one per file + per media minute (thumbnails: file only)
-                    r = await Actor.charge(event_name="file-converted", count=1)
-                    if target != "thumbnail":
-                        await Actor.charge(event_name="media-minute", count=minutes)
-                    await Actor.push_data(row)
-                    if getattr(r, "event_charge_limit_reached", False):
-                        Actor.log.info("Spending limit reached; stopping.")
-                        break
+                               input=res.input_probe, billedMinutes=minutes if minute_event else 0,
+                               minuteEvent=minute_event, videoReencoded=res.reencoded if target in ("mp4", "webm") else None)
                 except (ConversionError, httpx.HTTPError, Exception) as e:  # never-fail: error rows are free
                     row.update(status="error", error=str(e)[:500])
                     await Actor.push_data(row)
+                    continue
+            # Charge only after the output is stored and the row is complete: failed items are never charged.
+            await Actor.push_data(row)
+            limit = False
+            for event, count in plan:
+                try:
+                    r = await Actor.charge(event_name=event, count=count)
+                    limit = limit or getattr(r, "event_charge_limit_reached", False)
+                except Exception as e:  # a charging hiccup must not turn a delivered file into an error
+                    Actor.log.warning(f"Charging {event} failed: {e}")
+            if limit:
+                Actor.log.info("Spending limit reached; stopping.")
+                break

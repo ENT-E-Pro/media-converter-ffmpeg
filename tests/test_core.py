@@ -81,3 +81,39 @@ def test_small_video_not_upscaled(media, tmp_path):
     r = convert(media["av"], "webm", str(tmp_path))
     p = probe(r.output_path)
     assert (p["video"]["width"], p["video"]["height"]) == (320, 240) and p["video"]["codec"] == "vp9"
+
+
+# ---- pricing: video-reencode-minute ----
+from src.core import charge_plan, is_hd_reencode, Result, REENCODE_EVENT
+
+def _res(reencoded, w, h):
+    return Result("x", "mp4", "video/mp4", {}, 1, 30.0, reencoded, w, h)
+
+@pytest.mark.parametrize("target,res,expected", [
+    ("mp4", _res(True, 1920, 1080), REENCODE_EVENT),
+    ("webm", _res(True, 1080, 1920), REENCODE_EVENT),   # portrait 1080p-class
+    ("mp4", _res(True, 1280, 720), "media-minute"),     # 720p is not "over 720p"
+    ("mp4", _res(True, 1280, 722), REENCODE_EVENT),
+    ("mp4", _res(False, 1920, 1080), "media-minute"),   # stream copy
+    ("mp3", _res(False, None, None), "media-minute"),
+    ("gif", _res(True, 360, 202), "media-minute"),
+])
+def test_charge_plan_single_minute_event(target, res, expected):
+    plan = charge_plan(target, res, 3)
+    assert plan == [("file-converted", 1), (expected, 3)]
+
+def test_charge_plan_thumbnail_and_fallback():
+    assert charge_plan("thumbnail", _res(False, 1920, 1080), 1) == [("file-converted", 1)]
+    # new event not in the run's pricing yet (notice period) -> old behaviour
+    assert charge_plan("mp4", _res(True, 1920, 1080), 2, reencode_event_live=False) == [("file-converted", 1), ("media-minute", 2)]
+
+def test_convert_reports_reencode_and_size(tmp_path):
+    web = _mk(str(tmp_path / "web.mp4"), "-c:v","libx264","-pix_fmt","yuv420p","-c:a","aac")
+    copied = convert(web, "mp4", str(tmp_path))
+    assert copied.reencoded is False and not is_hd_reencode("mp4", copied)
+    big = str(tmp_path / "big.mkv")
+    subprocess.run(["ffmpeg","-y","-v","error","-f","lavfi","-i","testsrc=size=2560x1440:rate=5","-t","0.4","-c:v","mpeg4",big],check=True)
+    r = convert(big, "mp4", str(tmp_path))
+    assert r.reencoded and (r.output_width, r.output_height) == (1920, 1080) and is_hd_reencode("mp4", r)
+    small = convert(web, "webm", str(tmp_path))
+    assert small.reencoded and not is_hd_reencode("webm", small)

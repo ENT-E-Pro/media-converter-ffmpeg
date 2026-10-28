@@ -23,7 +23,7 @@ You give it a media URL and a target format. It downloads the file, runs FFmpeg,
 | `thumbnail` | A JPEG frame: the first frame, or the frame at `startSeconds` |
 
 - **Trim** with `startSeconds` / `durationSeconds` (top level or per file).
-- **Video capped at 1080p:** larger inputs are scaled down to fit 1920×1080 (or 1080×1920 portrait). Inputs already in the target codec (H.264 for `mp4`; VP9/VP8/AV1 for `webm`), 8-bit 4:2:0 and ≤1080p are remuxed without re-encoding when no trim is set.
+- **Video capped at 1080p:** larger inputs are scaled down to fit 1920×1080 (or 1080×1920 portrait). Inputs already in the target codec (H.264 for `mp4`; VP9/VP8/AV1 for `webm`), 8-bit 4:2:0 and ≤1080p are remuxed without re-encoding when no trim is set. Re-encoding above 720p is billed at the HD re-encode rate (see Pricing).
 - **Batch** many URLs in one run with a `files` array, each with its own target and trim.
 - **Failed files are free:** an unreadable or unreachable file comes back as a `status: "error"` row and the run continues.
 - **Agent-friendly:** use it from MCP clients (Claude, Cursor) through Apify's MCP server, n8n, Make, Zapier or plain HTTP.
@@ -137,21 +137,24 @@ One dataset row per input file:
     "video": { "codec": "h264", "width": 1280, "height": 720 },
     "audio": { "codec": "aac", "sampleRate": 44100, "channels": 2 }
   },
-  "billedMinutes": 1
+  "billedMinutes": 1,
+  "minuteEvent": "media-minute",
+  "videoReencoded": null
 }
 ```
 
-A failed file returns `sourceUrl`, `target`, `status: "error"` and `error`, and is not charged.
+A failed file returns `sourceUrl`, `target`, `status: "error"` and `error`, and is not charged. `minuteEvent` shows which per-minute event was charged (`media-minute`, `video-reencode-minute`, or `null` for thumbnails), and `videoReencoded` shows, for `mp4`/`webm`, whether the video was re-encoded (`true`) or copied (`false`).
 
 ## Pricing (pay per event on Apify)
 
 | Event | Price |
 |---|---|
 | File converted (per successful output file) | **$0.005** ($5 per 1,000 files) |
-| Media minute (per started minute of output audio, video or GIF; thumbnails excluded) | **$0.002** |
+| Media minute (per started minute of output audio, GIF, stream-copied video, or video re-encoded at 720p or lower; thumbnails excluded) | **$0.002** |
+| HD video re-encode minute (per started minute when `mp4`/`webm` video is actually re-encoded above 720p, i.e. 1080p-class after the cap; charged *instead of* the media minute, never both) | **$0.04** |
 | Actor start (per run, per GB of memory) | $0.00005 |
 
-Failed files are free. Examples: 1,000 thumbnails ≈ $5.00; a 10-minute podcast to `wav16k` ≈ $0.025; a 6-second GIF ≈ $0.007. See the [Store page](https://apify.com/ent-e/media-converter-ffmpeg) for current pricing.
+Failed files are free. Examples: 1,000 thumbnails ≈ $5.00; a 10-minute podcast to `wav16k` ≈ $0.025; a 6-second GIF ≈ $0.007; a 30-second 1080p H.264 MP4 copied to `mp4` ≈ $0.007; the same clip re-encoded at 1080p (e.g. trimmed, HEVC/MOV source, or WebM output) ≈ $0.045; a 30-second 720p re-encode ≈ $0.007. HD re-encoding costs more because 1080p encoding takes about 8× real time on the default 1 GB run. See the [Store page](https://apify.com/ent-e/media-converter-ffmpeg) for current pricing.
 
 ## Development
 

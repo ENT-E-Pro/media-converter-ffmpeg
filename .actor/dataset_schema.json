@@ -12,6 +12,7 @@
           "outputBytes",
           "outputDurationSeconds",
           "billedMinutes",
+          "minuteEvent",
           "error"
         ]
       },

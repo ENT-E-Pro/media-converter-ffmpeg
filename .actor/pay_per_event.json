@@ -1,4 +1,5 @@
 {
+  "_note": "Live pricing is applied via the Apify API (pricingInfos). video-reencode-minute added 2026-10-28.",
   "events": {
     "apify-actor-start": {
       "title": "Actor start",
@@ -12,8 +13,13 @@
     },
     "media-minute": {
       "title": "Media minute processed",
-      "description": "Per started minute of output audio/video (not charged for thumbnails).",
+      "description": "Per started minute of output audio/video, GIF, stream-copied video and video re-encoded at 720p or lower (not charged for thumbnails).",
       "price": 0.002
+    },
+    "video-reencode-minute": {
+      "title": "HD video re-encode minute",
+      "description": "Per started minute of output when mp4/webm video is actually re-encoded above 720p (1080p-class, after the 1080p cap). Charged instead of media-minute, never in addition. Failed files are free.",
+      "price": 0.04
     }
   },
   "passPlatformUsageToUser": false

@@ -38,6 +38,9 @@ class Result:
     input_probe: dict
     output_bytes: int
     output_duration: float | None
+    reencoded: bool = False          # video stream was encoded (not stream-copied); mp4/webm only
+    output_width: int | None = None
+    output_height: int | None = None
 
 
 def probe(path: str) -> dict:
@@ -84,14 +87,18 @@ def convert(src: str, target: str, out_dir: str, start: float | None = None, dur
     cmd += ["-i", src]
     if duration:
         cmd += ["-t", str(duration)]
+    reencoded = False
     if target in ("mp4", "webm"):
         args = _video_args(target, args, vstream, astream, trimmed=bool(start or duration))
+        reencoded = "copy" not in args
     cmd += args + [out]
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     if p.returncode != 0 or not os.path.exists(out) or os.path.getsize(out) == 0:
         raise ConversionError(f"ffmpeg failed: {p.stderr.strip()[:500]}")
     out_info = probe(out) if target != "thumbnail" else {"duration": None}
-    return Result(out, ext, mime, info, os.path.getsize(out), out_info.get("duration"))
+    ov = out_info.get("video") or {}
+    return Result(out, ext, mime, info, os.path.getsize(out), out_info.get("duration"),
+                  reencoded, ov.get("width"), ov.get("height"))
 
 
 def _fits_1080p(v: dict) -> bool:
@@ -131,3 +138,27 @@ def billable_minutes(seconds: float | None) -> int:
         return 1
     import math
     return max(1, math.ceil(max(0.0, seconds - BILLING_TOLERANCE_SECONDS) / 60))
+
+
+# --- pay-per-event plan (pure, unit-tested) ---
+REENCODE_EVENT = "video-reencode-minute"
+HD_REENCODE_MIN_SIDE = 720  # "over 720p": the shorter output side must exceed 720 px (1080p-class)
+
+
+def is_hd_reencode(target: str, res: Result) -> bool:
+    """True when mp4/webm video was actually re-encoded and the output is above 720p (after the 1080p cap)."""
+    if target not in ("mp4", "webm") or not res.reencoded:
+        return False
+    w, h = res.output_width or 0, res.output_height or 0
+    return min(w, h) > HD_REENCODE_MIN_SIDE
+
+
+def charge_plan(target: str, res: Result, minutes: int, reencode_event_live: bool = True) -> list[tuple[str, int]]:
+    """Events to charge for ONE successful output. Exactly one per-minute event (never both):
+    video-reencode-minute for 1080p-class re-encodes, else media-minute; thumbnails pay the file event only.
+    If the new event is not in the run's pricing yet (notice period), fall back to media-minute."""
+    plan = [("file-converted", 1)]
+    if target == "thumbnail":
+        return plan
+    event = REENCODE_EVENT if (reencode_event_live and is_hd_reencode(target, res)) else "media-minute"
+    return plan + [(event, minutes)]
