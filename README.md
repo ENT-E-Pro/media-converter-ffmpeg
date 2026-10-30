@@ -182,6 +182,16 @@ examples/      Sample input JSON
 Dockerfile     Apify Python base image + ffmpeg
 ```
 
+## ENT-E media toolkit
+
+Every tool takes a public file URL, needs nothing installed, charges per file, doesn't charge for failures, and works from MCP, n8n, Make, Zapier and the API.
+
+- **[Media Converter for AI Agents (FFmpeg)](https://apify.com/ent-e/media-converter-ffmpeg)**: audio/video to MP3, Whisper-ready 16 kHz WAV, MP4, WebM, GIF or thumbnails, with trim and batch.
+- **[Image Converter & Compressor](https://apify.com/ent-e/image-converter-compressor)**: convert to WebP or AVIF, compress to a target file size, resize, strip EXIF/GPS.
+- **[Podcast Loudness Normalizer](https://apify.com/ent-e/podcast-loudness-normalizer)**: normalize to -16, -14, -23 or -24 LUFS with a true-peak ceiling, plus a before/after report.
+- **[Video to Captions](https://apify.com/ent-e/video-to-captions-whisper)**: SRT, VTT, TXT and word-level JSON from any video or audio URL, with Whisper.
+- **[Video to Shorts](https://apify.com/ent-e/video-to-shorts-captions)**: vertical 9:16 clips with burned-in animated captions for TikTok, Reels and Shorts.
+
 ## Also from ENT-E
 
 [Image Converter & Compressor](https://apify.com/ent-e/image-converter-compressor) ([source](https://github.com/ENT-E-Pro/image-converter-compressor)): WebP, AVIF, JPEG and more, target file size and EXIF/GPS stripping, at $1 per 1,000 images.
